@@ -15,23 +15,31 @@ const (
 )
 
 var (
-	redBalls, blueBalls, greenBalls int
-	ballBinding                     = map[string]*int{
+	isSecondPart                                   bool
+	redBallsLimit, blueBallsLimit, greenBallsLimit int
+	gameRegex                                      = regexp.MustCompile(`(?m)Game (?P<game>[0-9]+): (?P<line>.*)$`)
+)
+
+func init() {
+	flag.IntVar(&redBallsLimit, "reds-limit", 12, "Sets reds ball amount limit (default: 12)")
+	flag.IntVar(&greenBallsLimit, "green-limit", 13, "Sets green ball amount limit (default: 13)")
+	flag.IntVar(&blueBallsLimit, "blue-limit", 14, "Sets blue ball amount limit (default: 14)")
+	flag.BoolVar(&isSecondPart, "alternative-calculations", false, "Uses ball amount power instead of game number")
+	flag.Parse()
+}
+
+func checkBallAmountIsValid(red, green, blue int) bool {
+	return red <= redBallsLimit && green <= greenBallsLimit && blue <= blueBallsLimit
+}
+
+func countBalls(turns []string) (int, int, int) {
+	redBalls, greenBalls, blueBalls := 0, 0, 0
+	ballBinding := map[string]*int{
 		"green": &greenBalls,
 		"red":   &redBalls,
 		"blue":  &blueBalls,
 	}
-	gameRegex = regexp.MustCompile(`(?m)Game (?P<game>[0-9]+): (?P<line>.*)$`)
-)
 
-func init() {
-	flag.IntVar(&redBalls, "reds-limit", 12, "Sets reds ball amount limit (default: 12)")
-	flag.IntVar(&greenBalls, "green-limit", 13, "Sets green ball amount limit (default: 13)")
-	flag.IntVar(&blueBalls, "blue-limit", 14, "Sets blue ball amount limit (default: 14)")
-	flag.Parse()
-}
-
-func analyseLine(turns []string) bool {
 	for _, turn := range turns {
 		details := strings.Split(turn, ",")
 
@@ -39,15 +47,15 @@ func analyseLine(turns []string) bool {
 			ballDetails = strings.Trim(ballDetails, " ")
 			// parts[0] should be the ball amount, [1] should be the color
 			parts := strings.Split(ballDetails, " ")
-			ballAmount, _ := strconv.Atoi(parts[0])
-			ballType := ballBinding[parts[1]]
+			parsedBallAmount, _ := strconv.Atoi(parts[0])
+			savedBallAmount := ballBinding[parts[1]]
 
-			if *ballType < ballAmount {
-				return false
+			if *savedBallAmount < parsedBallAmount {
+				*savedBallAmount = parsedBallAmount
 			}
 		}
 	}
-	return true
+	return redBalls, greenBalls, blueBalls
 }
 
 func main() {
@@ -56,22 +64,24 @@ func main() {
 		log.Fatalln("couldn't open input file\n", err)
 	}
 	fileLines := strings.Split(string(file[:]), "\n")
-	validLines := make([]int, 0, len(fileLines))
+	games := make([]int, 0, len(fileLines))
 	regexRes := gameRegex.FindAllStringSubmatch(string(file[:]), -1)
 
 	for _, line := range regexRes {
 		gameNb, _ := strconv.Atoi(line[1])
 		gameTurns := strings.Split(line[2], ";")
-		isGameValid := analyseLine(gameTurns)
+		redBallAmount, greenBallAmount, blueBallAmount := countBalls(gameTurns)
 
-		if isGameValid {
-			validLines = append(validLines, gameNb)
+		if !isSecondPart && checkBallAmountIsValid(redBallAmount, greenBallAmount, blueBallAmount) {
+			games = append(games, gameNb)
+		} else if isSecondPart {
+			games = append(games, redBallAmount*greenBallAmount*blueBallAmount)
 		}
 	}
 
 	sum := 0
-	for _, gameNb := range validLines {
-		sum += gameNb
+	for _, gamePower := range games {
+		sum += gamePower
 	}
 	fmt.Printf("Game result: %d\n", sum)
 }
