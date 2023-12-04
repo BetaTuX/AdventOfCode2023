@@ -81,33 +81,38 @@ func cutString(base string, isValid func(rune) bool) string {
 	return base
 }
 
+func parseDigit(slice string, x, y int) int {
+	numberString := cutString(slice[x:], isDigit)
+	numberLength := len(numberString)
+
+	if number, err := strconv.Atoi(numberString); err == nil {
+		numbers = append(numbers, EngineNumber{
+			value: number,
+			position: Position{
+				x: x,
+				y: y,
+			},
+			length: numberLength,
+		})
+		return numberLength - 1
+	} else {
+		fmt.Printf("error during number parsing: %s\n", err)
+	}
+	return 0
+}
+
 func parseLine(line string, lineIndex int) {
 	slice := line
 
 	for i := 0; i < len(slice); i++ {
-		char := slice[i]
+		char := rune(slice[i])
 
 		if char == '.' {
 			continue
 		}
-		if isDigit(rune(char)) {
-			numberString := cutString(slice[i:], isDigit)
-			numberLength := len(numberString)
-
-			if number, err := strconv.Atoi(numberString); err == nil {
-				numbers = append(numbers, EngineNumber{
-					value: number,
-					position: Position{
-						x: i,
-						y: lineIndex,
-					},
-					length: numberLength,
-				})
-				i += numberLength - 1
-			} else {
-				fmt.Printf("error during number parsing: %s\n", err)
-			}
-		} else if isEngineSymbol(rune(char)) {
+		if isDigit(char) {
+			i += parseDigit(slice, i, lineIndex)
+		} else if isEngineSymbol(char) {
 			symbols = append(symbols, Position{
 				x: i,
 				y: lineIndex,
