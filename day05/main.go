@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -15,22 +16,36 @@ const (
 )
 
 var (
-	fileLines []string
+	fileLines     []string
+	useSeedRanges bool
 )
+
+func init() {
+	flag.BoolVar(&useSeedRanges, "seed-ranges", false, "seeds are ranges instead of simple seeds")
+	flag.Parse()
+}
 
 type Range struct {
 	// Destination range start
-	destination int
-	// Source range start
-	source int
+	start int
 	// Ranges length
 	length int
+}
+
+type ByStartIndex []Range
+
+func (ranges ByStartIndex) Len() int           { return len(ranges) }
+func (ranges ByStartIndex) Swap(i, j int)      { ranges[i], ranges[j] = ranges[j], ranges[i] }
+func (ranges ByStartIndex) Less(i, j int) bool { return ranges[i].start < ranges[j].start }
+
+type Mapper struct {
+	source, destination Range
 }
 
 type PuzzleMap struct {
 	sourceId      string
 	destinationId string
-	ranges        []Range
+	mappers       []Mapper
 }
 
 type MapChain struct {
@@ -62,29 +77,46 @@ func (chain *MapChain) Sort() error {
 
 func (chain MapChain) Evaluate(id int) int {
 	for _, block := range chain.maps {
-		id = block.getNumber(id)
+		newId := block.GetNumber(id)
+		id = newId
 	}
 	return id
 }
 
-func (r Range) isInRange(number int) bool {
-	return r.source <= number && number <= r.source+r.length
+func (chain MapChain) ReverseEvaluate(id int) int {
+	for i := len(chain.maps) - 1; i >= 0; i-- {
+		block := chain.maps[i]
+		newId := block.GetRoot(id)
+		id = newId
+	}
+	return id
 }
 
-func (r Range) getNumber(number int) int {
-	if r.isInRange(number) {
-		return number + r.destination - r.source
+func (r Range) IsInRange(number int) bool {
+	return r.start <= number && number < r.start+r.length
+}
+
+func (r Mapper) GetNumber(number int) int {
+	if r.source.IsInRange(number) {
+		return number + r.destination.start - r.source.start
 	}
 	return number
 }
 
-func rangeFromString(input string) (Range, error) {
+func (r Mapper) GetRoot(number int) int {
+	if r.destination.IsInRange(number) {
+		return number - (r.destination.start - r.source.start)
+	}
+	return number
+}
+
+func mapperFromString(input string) (Mapper, error) {
 	inputs := strings.Split(input, " ")
 	errors := make([]error, 3)
 	var destinationRangeStart, sourceRangeStart, rangeLength int
 
 	if len(inputs) != 3 {
-		return Range{}, fmt.Errorf("range parsing error: found more than 3 numbers")
+		return Mapper{}, fmt.Errorf("range parsing error: found more than 3 numbers")
 	}
 
 	destinationRangeStart, errors[0] = strconv.Atoi(inputs[0])
@@ -93,14 +125,13 @@ func rangeFromString(input string) (Range, error) {
 
 	for _, err := range errors {
 		if err != nil {
-			return Range{}, fmt.Errorf("range parsing error: %v", err)
+			return Mapper{}, fmt.Errorf("range parsing error: %v", err)
 		}
 	}
 
-	return Range{
-		destination: destinationRangeStart,
-		source:      sourceRangeStart,
-		length:      rangeLength,
+	return Mapper{
+		destination: Range{start: destinationRangeStart, length: rangeLength},
+		source:      Range{start: sourceRangeStart, length: rangeLength},
 	}, nil
 }
 
@@ -121,11 +152,11 @@ func puzzleMapFromLines(input *[]string) (PuzzleMap, error) {
 		return PuzzleMap{}, fmt.Errorf("map parsing error: couldn't identify map resource ids")
 	}
 
-	ranges := make([]Range, 0)
+	mappers := make([]Mapper, 0)
 
 	for ; len(*input) > 0 && (*input)[0] != ""; *input = (*input)[1:] {
-		if r, err := rangeFromString((*input)[0]); err == nil {
-			ranges = append(ranges, r)
+		if m, err := mapperFromString((*input)[0]); err == nil {
+			mappers = append(mappers, m)
 		} else {
 			return PuzzleMap{}, err
 		}
@@ -134,14 +165,29 @@ func puzzleMapFromLines(input *[]string) (PuzzleMap, error) {
 	return PuzzleMap{
 		sourceId:      regResults[1],
 		destinationId: regResults[2],
-		ranges:        ranges,
+		mappers:       mappers,
 	}, nil
 }
 
-func (m PuzzleMap) getNumber(number int) int {
-	for _, r := range m.ranges {
-		if r.isInRange(number) {
-			return r.getNumber(number)
+func (m PuzzleMap) GetNumber(number int) int {
+	result := -1
+
+	for _, r := range m.mappers {
+		if mapped := r.GetNumber(number); (r.source.IsInRange(number) && result < 0) || mapped < result {
+			result = mapped
+		}
+	}
+	if result >= 0 {
+		return result
+	} else {
+		return number
+	}
+}
+
+func (m PuzzleMap) GetRoot(number int) int {
+	for _, r := range m.mappers {
+		if mapped := r.GetRoot(number); r.destination.IsInRange(number) {
+			return mapped
 		}
 	}
 	return number
@@ -171,6 +217,18 @@ func parseSeeds(line string) ([]int, error) {
 	return seeds, nil
 }
 
+func mapSeedsToRangeList(seeds []int) []Range {
+	ranges := make([]Range, len(seeds)/2)
+
+	for i := 0; i < len(seeds); i += 2 {
+		ranges[i/2] = Range{
+			start:  seeds[i],
+			length: seeds[i+1],
+		}
+	}
+	return ranges
+}
+
 func main() {
 	seeds, seedParsingErr := parseSeeds(fileLines[0])
 	mapPuzzles := make([]PuzzleMap, 0)
@@ -196,14 +254,28 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	possibleLocations := make([]int, 0, len(mapPuzzles))
-	for _, seed := range seeds {
-		possibleLocations = append(possibleLocations, chain.Evaluate(seed))
+	var closestLocation = -1
+	var rangeList []Range
+	if useSeedRanges {
+		rangeList = mapSeedsToRangeList(seeds)
+	} else {
+		rangeList = make([]Range, 0, len(seeds))
+		for _, seed := range seeds {
+			rangeList = append(rangeList, Range{
+				start:  seed,
+				length: 1,
+			})
+		}
 	}
-	closestLocation := possibleLocations[0]
-	for _, opportunity := range possibleLocations[1:] {
-		if opportunity < closestLocation {
-			closestLocation = opportunity
+
+	for location := 1; closestLocation < 0; location++ {
+		root := chain.ReverseEvaluate(location)
+
+		for _, r := range rangeList {
+			if r.IsInRange(root) && (location < closestLocation || closestLocation < 0) {
+				closestLocation = location
+				break
+			}
 		}
 	}
 
