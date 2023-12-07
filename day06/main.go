@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"math"
@@ -15,8 +16,14 @@ const (
 )
 
 var (
-	fileLines []string
+	fileLines       []string
+	mergeRacesInput bool
 )
+
+func init() {
+	flag.BoolVar(&mergeRacesInput, "one-race", true, "there is simply one race with all the concatenated numbers")
+	flag.Parse()
+}
 
 func init() {
 	file, err := os.ReadFile(inputFilename)
@@ -66,6 +73,16 @@ func parseFile() ([]RaceRecord, error) {
 	reg := regexp.MustCompile(`[[:digit:]]+`)
 	timeResults := reg.FindAllString(fileLines[0], -1)
 	distanceResults := reg.FindAllString(fileLines[1], -1)
+
+	if mergeRacesInput {
+		timeResults = []string{
+			strings.Join(timeResults, ""),
+		}
+		distanceResults = []string{
+			strings.Join(distanceResults, ""),
+		}
+	}
+
 	races := make([]RaceRecord, len(timeResults))
 
 	for index := range timeResults {
