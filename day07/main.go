@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -10,13 +11,27 @@ import (
 )
 
 const (
-	inputFilename = "input.txt"
-	LEGAL_CARDS   = "AKQJT98765432"
+	inputFilename            = "input.txt"
+	LEGAL_CARDS_CLASSIC_RULE = "AKQJT98765432"
+	LEGAL_CARDS_JOKER_RULE   = "AKQT98765432J"
 )
 
 var (
-	fileLines []string
+	shouldUseJokerRule bool
+	LEGAL_CARDS        string
+	fileLines          []string
 )
+
+func init() {
+	flag.BoolVar(&shouldUseJokerRule, "jokers", false, "Jacks become Jokers, see rules in instructions")
+	flag.Parse()
+
+	if shouldUseJokerRule {
+		LEGAL_CARDS = LEGAL_CARDS_JOKER_RULE
+	} else {
+		LEGAL_CARDS = LEGAL_CARDS_CLASSIC_RULE
+	}
+}
 
 func init() {
 	file, err := os.ReadFile(inputFilename)
@@ -46,7 +61,13 @@ func identifyHandType(hand string) (int, error) {
 	maxSameCard := 0
 	differentCardKind := 0
 	pairAmount := 0
-	for _, amount := range cards {
+	jokerAmount := 0
+	for card, amount := range cards {
+		// Skip J because it shouldn't be identified as anything
+		if shouldUseJokerRule && card == 'J' {
+			jokerAmount += amount
+			continue
+		}
 		differentCardKind++
 		if amount == 2 {
 			pairAmount++
@@ -56,19 +77,31 @@ func identifyHandType(hand string) (int, error) {
 		}
 	}
 
+	// You now have to take jokers in account as possibly helping the highest amount of same card
+	if shouldUseJokerRule {
+		maxSameCard += jokerAmount
+	}
+
 	switch {
+	// Quinte
 	case maxSameCard == 5:
 		return 0, nil
+	// Carré
 	case maxSameCard == 4:
 		return 1, nil
-	case differentCardKind == 2 && maxSameCard == 3 && pairAmount == 1:
+	// Full
+	case differentCardKind == 2 && maxSameCard == 3 && (pairAmount == 1 || shouldUseJokerRule && jokerAmount >= 1 && pairAmount >= 1):
 		return 2, nil
+	// Brelan
 	case maxSameCard == 3:
 		return 3, nil
+	// 2 Paires
 	case pairAmount == 2:
 		return 4, nil
-	case pairAmount == 1:
+	// Paire
+	case pairAmount == 1 || (shouldUseJokerRule && maxSameCard == 2 && jokerAmount >= 1):
 		return 5, nil
+	// Hauteur
 	default:
 		return 6, nil
 	}
@@ -103,10 +136,8 @@ type ByHandPower []Hand
 func (ranges ByHandPower) Len() int      { return len(ranges) }
 func (ranges ByHandPower) Swap(i, j int) { ranges[i], ranges[j] = ranges[j], ranges[i] }
 func (ranges ByHandPower) Less(i, j int) bool {
-	if ranges[i].Type > ranges[j].Type {
-		return true
-	} else if ranges[i].Type < ranges[j].Type {
-		return false
+	if ranges[i].Type != ranges[j].Type {
+		return ranges[i].Type > ranges[j].Type
 	}
 	for index := range ranges[i].Cards {
 		left := strings.IndexByte(LEGAL_CARDS, ranges[i].Cards[index])
@@ -117,7 +148,8 @@ func (ranges ByHandPower) Less(i, j int) bool {
 		}
 		return left > right
 	}
-	return true
+	fmt.Printf("hands are equal, it shouldn't happen")
+	return false
 }
 
 func main() {
