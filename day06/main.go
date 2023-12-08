@@ -21,7 +21,7 @@ var (
 )
 
 func init() {
-	flag.BoolVar(&mergeRacesInput, "one-race", true, "there is simply one race with all the concatenated numbers")
+	flag.BoolVar(&mergeRacesInput, "one-race", false, "there is simply one race with all the concatenated numbers")
 	flag.Parse()
 }
 
