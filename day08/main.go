@@ -53,28 +53,11 @@ func (node *BTNode) walkRight() *BTNode {
 	}
 }
 
-func (group NodeGroup) walkLeft() {
-	for nodeIndex := range group {
-		group[nodeIndex] = group[nodeIndex].walkLeft()
-	}
-}
-
-func (group NodeGroup) walkRight() {
-	for nodeIndex := range group {
-		group[nodeIndex] = group[nodeIndex].walkRight()
-	}
-}
-
-func (group NodeGroup) hasReachedDestination() bool {
+func (node *BTNode) isFinalDestination() bool {
 	if !useGhostNavigation {
-		return group[0].id == "ZZZ"
+		return node.id == "ZZZ"
 	} else {
-		for _, node := range group {
-			if node.id[len(node.id)-1] != 'Z' {
-				return false
-			}
-		}
-		return true
+		return node.id[len(node.id)-1] == 'Z'
 	}
 }
 
@@ -134,8 +117,9 @@ func buildNodeGroup() NodeGroup {
 	return group
 }
 
-func main() {
-	group := buildNodeGroup()
+func evaluateCycleNumber(startingNodeId string) int {
+	startNode := nodes[startingNodeId]
+	currentNode := &startNode
 	loop := 0
 
 	for instructionIndex := 0; instructionIndex < len(instructions); {
@@ -143,14 +127,14 @@ func main() {
 
 		switch instruction {
 		case 'R':
-			group.walkRight()
+			currentNode = currentNode.walkRight()
 		case 'L':
-			group.walkLeft()
+			currentNode = currentNode.walkLeft()
 		default:
 			log.Panicf("instruction unrecognized: %c", instruction)
 		}
 		loop++
-		if group.hasReachedDestination() {
+		if currentNode.isFinalDestination() {
 			break
 		}
 		if instructionIndex == len(instructions)-1 {
@@ -158,6 +142,44 @@ func main() {
 		} else {
 			instructionIndex++
 		}
+	}
+	return loop
+}
+
+// greatest common divisor (GCD) via Euclidean algorithm
+func GCD(a, b int) int {
+	for b != 0 {
+		t := b
+		b = a % b
+		a = t
+	}
+	return a
+}
+
+// find Least Common Multiple (LCM) via GCD
+func LCM(a, b int, integers ...int) int {
+	result := a * b / GCD(a, b)
+
+	for i := 0; i < len(integers); i++ {
+		result = LCM(result, integers[i])
+	}
+
+	return result
+}
+
+func main() {
+	group := buildNodeGroup()
+	var loop int
+
+	if !useGhostNavigation {
+		loop = evaluateCycleNumber(group[0].id)
+	} else {
+		pathLengths := make([]int, len(group))
+
+		for nodeIndex, node := range group {
+			pathLengths[nodeIndex] = evaluateCycleNumber(node.id)
+		}
+		loop = LCM(pathLengths[0], pathLengths[1], pathLengths...)
 	}
 
 	fmt.Printf("result: %d\n", loop)
