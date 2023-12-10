@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -15,14 +16,22 @@ const (
 var (
 	fileLines []string
 
-	instructions string
-	nodes        map[string]BTNode
+	instructions       string
+	nodes              map[string]BTNode
+	useGhostNavigation bool
 )
+
+func init() {
+	flag.BoolVar(&useGhostNavigation, "ghost", true, "Uses ghosts navigation rules")
+	flag.Parse()
+}
 
 type BTNode struct {
 	id          string
 	left, right string
 }
+
+type NodeGroup []*BTNode
 
 func (node *BTNode) walkLeft() *BTNode {
 	leftNode, exists := nodes[node.left]
@@ -44,8 +53,33 @@ func (node *BTNode) walkRight() *BTNode {
 	}
 }
 
+func (group NodeGroup) walkLeft() {
+	for nodeIndex := range group {
+		group[nodeIndex] = group[nodeIndex].walkLeft()
+	}
+}
+
+func (group NodeGroup) walkRight() {
+	for nodeIndex := range group {
+		group[nodeIndex] = group[nodeIndex].walkRight()
+	}
+}
+
+func (group NodeGroup) hasReachedDestination() bool {
+	if !useGhostNavigation {
+		return group[0].id == "ZZZ"
+	} else {
+		for _, node := range group {
+			if node.id[len(node.id)-1] != 'Z' {
+				return false
+			}
+		}
+		return true
+	}
+}
+
 func parseNode(input string) (BTNode, error) {
-	var re = regexp.MustCompile(`(?m)([A-Z]{3}) = \(([A-Z]{3}), ([A-Z]{3})\)$`)
+	var re = regexp.MustCompile(`(?m)([0-9A-Z]{3}) = \(([0-9A-Z]{3}), ([0-9A-Z]{3})\)$`)
 	regexResult := re.FindStringSubmatch(input)
 
 	if len(regexResult) != 4 {
@@ -80,9 +114,28 @@ func init() {
 	}
 }
 
+func buildNodeGroup() NodeGroup {
+	group := make(NodeGroup, 0)
+
+	if !useGhostNavigation {
+		node, exists := nodes["AAA"]
+		if exists {
+			group = append(group, &node)
+		}
+	} else {
+		for nodeIndex := range nodes {
+			node := nodes[nodeIndex]
+
+			if node.id[len(node.id)-1] == 'A' {
+				group = append(group, &node)
+			}
+		}
+	}
+	return group
+}
+
 func main() {
-	startingNode := nodes["AAA"]
-	currentNode := &startingNode
+	group := buildNodeGroup()
 	loop := 0
 
 	for instructionIndex := 0; instructionIndex < len(instructions); {
@@ -90,14 +143,14 @@ func main() {
 
 		switch instruction {
 		case 'R':
-			currentNode = currentNode.walkRight()
+			group.walkRight()
 		case 'L':
-			currentNode = currentNode.walkLeft()
+			group.walkLeft()
 		default:
 			log.Panicf("instruction unrecognized: %c", instruction)
 		}
 		loop++
-		if currentNode.id == "ZZZ" {
+		if group.hasReachedDestination() {
 			break
 		}
 		if instructionIndex == len(instructions)-1 {
