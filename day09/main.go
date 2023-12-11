@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -13,8 +14,14 @@ const (
 )
 
 var (
-	fileLines []string
+	fileLines                []string
+	shouldReverseExtrapolate bool
 )
+
+func init() {
+	flag.BoolVar(&shouldReverseExtrapolate, "reverse", true, "Reverse extrapolate (push 0 instead of append)")
+	flag.Parse()
+}
 
 func init() {
 	file, err := os.ReadFile(inputFilename)
@@ -44,9 +51,13 @@ func (sequence IntSequence) allEqual(ref int) bool {
 	return true
 }
 
-func (initialSequence IntSequence) extrapolate() int {
+func (initialSequence IntSequence) extrapolate(reverse bool) int {
 	subSequence := make([]IntSequence, 1)
 	subSequence[0] = initialSequence
+
+	if reverse {
+		reverseArray(subSequence[0])
+	}
 
 	for !subSequence[len(subSequence)-1].allEqual(0) {
 		subSequence = append(subSequence, subSequence[len(subSequence)-1].generateDiffArray())
@@ -56,6 +67,15 @@ func (initialSequence IntSequence) extrapolate() int {
 		bufferNumber = bufferNumber + subSequence[i][len(subSequence[i])-1]
 	}
 	return bufferNumber
+}
+
+// Reverse values IN array (returns it to chain with different calls if necessary)
+// FIXME: Find out why [T []any] doesn't work with IntSequence when IntSequence <=> []int
+func reverseArray(arr IntSequence) IntSequence {
+	for i := 0; i < len(arr)/2; i++ {
+		arr[i], arr[len(arr)-(i+1)] = arr[len(arr)-(i+1)], arr[i]
+	}
+	return arr
 }
 
 func parseHistory(line string) (IntSequence, error) {
@@ -75,15 +95,13 @@ func parseHistory(line string) (IntSequence, error) {
 }
 
 func main() {
-	// histories := make([]IntSequence, len(fileLines))
 	sum := 0
 
 	for _, line := range fileLines {
 		sequence, err := parseHistory(line)
 
 		if err == nil {
-			// histories = append(histories, sequence)
-			sum += sequence.extrapolate()
+			sum += sequence.extrapolate(shouldReverseExtrapolate)
 		} else {
 			log.Panicf("error during number parsing: %v", err)
 		}
