@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"math"
@@ -12,6 +13,22 @@ import (
 const (
 	inputFilename = "input.txt"
 )
+
+var (
+	shouldUseOlderGalaxies bool
+	galaxyOffset           int
+)
+
+func init() {
+	flag.BoolVar(&shouldUseOlderGalaxies, "older", true, "Use older galaxies")
+	flag.Parse()
+
+	if shouldUseOlderGalaxies {
+		galaxyOffset = 1000000
+	} else {
+		galaxyOffset = 2
+	}
+}
 
 type Star struct {
 	X, Y int
@@ -28,20 +45,21 @@ func evaluateDistanceBetweenStars(start, destination Star) int {
 	return xOffset + yOffset
 }
 
-func pushStarsAfterColumn(stars []Star, x int) {
+func pushStarsAfterColumn(stars []Star, x int) int {
 	toPush := make([]*Star, 0)
 
-	for offset := 0; true; offset++ {
-		starIndex := slices.IndexFunc(stars[offset:], func(s Star) bool { return s.X > x })
+	for indexOffset := 0; true; indexOffset++ {
+		starIndex := slices.IndexFunc(stars[indexOffset:], func(s Star) bool { return s.X > x })
 		if starIndex < 0 {
 			break
 		}
-		toPush = append(toPush, &stars[starIndex+offset])
-		offset += starIndex
+		toPush = append(toPush, &stars[starIndex+indexOffset])
+		indexOffset += starIndex
 	}
 	for _, starPtr := range toPush {
-		starPtr.X++
+		starPtr.X += galaxyOffset - 1
 	}
+	return galaxyOffset - 1
 }
 
 func initStarIndex() (GameParams, []Star) {
@@ -55,7 +73,7 @@ func initStarIndex() (GameParams, []Star) {
 		Height: len(fileLines),
 		Width:  len(fileLines[0]),
 	}
-	yOffset := 0
+	yTotalOffset := 0
 
 	for y, line := range fileLines {
 		starOnLine := 0
@@ -64,26 +82,25 @@ func initStarIndex() (GameParams, []Star) {
 				starOnLine++
 				stars = append(stars, Star{
 					X: x,
-					Y: y + yOffset,
+					Y: y + yTotalOffset,
 				})
 			}
 		}
 		if starOnLine == 0 {
-			yOffset++
+			yTotalOffset += galaxyOffset - 1
 		}
 	}
-	xOffset := 0
+	xTotalOffset := 0
 	for x := 0; x < params.Width; x++ {
 		if slices.IndexFunc(stars, func(s Star) bool {
-			return s.X-xOffset == x
+			return s.X-xTotalOffset == x
 		}) == -1 {
-			pushStarsAfterColumn(stars, x+xOffset)
-			xOffset++
+			xTotalOffset += pushStarsAfterColumn(stars, x+xTotalOffset)
 		}
 	}
 	return GameParams{
-		Width:  params.Width + xOffset,
-		Height: params.Height + yOffset,
+		Width:  params.Width + xTotalOffset,
+		Height: params.Height + yTotalOffset,
 	}, stars
 }
 
