@@ -1,11 +1,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
-	"math"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -13,6 +12,15 @@ import (
 const (
 	inputFilename = "input.txt"
 )
+
+var (
+	shouldUnfoldInstructions bool
+)
+
+func init() {
+	flag.BoolVar(&shouldUnfoldInstructions, "unfold", false, "unfold instructions in input.txt")
+	flag.Parse()
+}
 
 type Instruction struct {
 	inputString string
@@ -22,21 +30,35 @@ type Instruction struct {
 func parseInstruction(line string) (Instruction, error) {
 	splitted := strings.Split(line, " ")
 	stringAmounts := strings.Split(splitted[1], ",")
-	amounts := make([]int, 0, len(stringAmounts))
+	var amounts []int
+	var inputString string
 
+	if shouldUnfoldInstructions {
+		inputString = fmt.Sprintf("%s?%s?%s?%s?%s", splitted[0], splitted[0], splitted[0], splitted[0], splitted[0])
+		amounts = make([]int, len(stringAmounts)*5)
+	} else {
+		inputString = splitted[0]
+		amounts = make([]int, len(stringAmounts))
+	}
 	if len(splitted) != 2 {
 		return Instruction{}, fmt.Errorf("identified more than 2 parts in input, it should be exactly 2 parts separated by a space")
 	}
-	for _, amountString := range stringAmounts {
+	for index, amountString := range stringAmounts {
 		if amount, parseError := strconv.Atoi(amountString); parseError == nil {
-			amounts = append(amounts, amount)
+			amounts[index] = amount
+			if shouldUnfoldInstructions {
+				amounts[index+len(stringAmounts)] = amount
+				amounts[index+len(stringAmounts)*2] = amount
+				amounts[index+len(stringAmounts)*3] = amount
+				amounts[index+len(stringAmounts)*4] = amount
+			}
 		} else {
 			return Instruction{}, fmt.Errorf("error parsing amount: %v", parseError)
 		}
 	}
 
 	return Instruction{
-		inputString: splitted[0],
+		inputString: inputString,
 		objective:   amounts,
 	}, nil
 }
@@ -59,55 +81,48 @@ func parseInputFile(filename string) []Instruction {
 	return instructions
 }
 
-func identifyArrangements(str string) []int {
-	arrangements := make([]int, 0)
-	inArrangements := false
+type State [3]int
 
-	for i := 0; i < len(str); {
-		inArrangements = str[i] == '#'
-
-		if inArrangements {
-			arrangementLength := strings.IndexRune(str[i:], '.')
-
-			if arrangementLength < 0 {
-				arrangementLength = len(str[i:])
-			}
-			arrangements = append(arrangements, arrangementLength)
-			i += arrangementLength
-		}
-		if nextArrangementIndex := strings.IndexRune(str[i:], '#'); nextArrangementIndex < 0 {
-			break
-		} else {
-			i += nextArrangementIndex
-		}
+func mapsClear[M ~map[K]V, K comparable, V any](m M) {
+	for k := range m {
+		delete(m, k)
 	}
-	return arrangements
 }
 
-func generateStringFromSeed(input string, seed int) string {
-	test := []byte(input)
+func countPossibilities(instruction Instruction) int {
+	total := 0
+	src := []byte(instruction.inputString)
+	states := map[State]int{{0, 0, 0}: 1}
+	nStates := map[State]int{}
 
-	for i := range test {
-		if test[i] == '?' {
-			if seed&0b1 == 1 {
-				test[i] = '#'
-			} else {
-				test[i] = '.'
+	for _, srcChar := range src {
+		for state, quantity := range states {
+			challengeSucceeded, hits, requiredEmpty := state[0], state[1], state[2]
+			switch {
+			case (srcChar == '#' || srcChar == '?') && challengeSucceeded < len(instruction.objective) && requiredEmpty == 0:
+				if srcChar == '?' && hits <= 0 {
+					nStates[[3]int{challengeSucceeded, hits, requiredEmpty}] += quantity
+				}
+				hits++
+				if hits == instruction.objective[challengeSucceeded] {
+					challengeSucceeded, hits, requiredEmpty = challengeSucceeded+1, 0, 1
+				}
+				nStates[[3]int{challengeSucceeded, hits, requiredEmpty}] += quantity
+			case (srcChar == '.' || srcChar == '?') && hits <= 0:
+				requiredEmpty = 0
+				nStates[[3]int{challengeSucceeded, hits, requiredEmpty}] += quantity
 			}
-			seed = seed >> 1
+		}
+		states, nStates = nStates, states
+		mapsClear(nStates)
+	}
+
+	for state, amount := range states {
+		if state[0] == len(instruction.objective) {
+			total += amount
 		}
 	}
-	return string(test)
-}
-
-func generatePossibleStrings(input string) []string {
-	possibilitiesAmount := int(math.Pow(2.0, float64(strings.Count(input, "?"))))
-	possibilities := make([]string, 0, possibilitiesAmount)
-
-	for i := 0; i < possibilitiesAmount; i++ {
-		possibilities = append(possibilities, generateStringFromSeed(input, i))
-	}
-	return possibilities
+	return total
 }
 
 func main() {
@@ -115,15 +130,7 @@ func main() {
 
 	total := 0
 	for _, instruction := range instructions {
-		possibilities := generatePossibleStrings(instruction.inputString)
-
-		for _, possibility := range possibilities {
-			identifiedArrangement := identifyArrangements(possibility)
-
-			if slices.Equal(instruction.objective, identifiedArrangement) {
-				total++
-			}
-		}
+		total += countPossibilities(instruction)
 	}
 	fmt.Printf("result: %d\n", total)
 }
