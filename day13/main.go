@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"math"
@@ -13,15 +14,38 @@ const (
 	inputFilename = "input.txt"
 )
 
+var (
+	mirrorHasSmudge bool
+)
+
+func init() {
+	flag.BoolVar(&mirrorHasSmudge, "smudge", false, "all mirrors have exactly ONE sludge to fix")
+	flag.Parse()
+}
+
 type GroundMap []string
 
+func lineDiff(a, b string) int {
+	diff := 0
+
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if a[i] != b[i] {
+			diff++
+		}
+	}
+	return diff + int(math.Abs(float64(len(a)-len(b))))
+}
+
 func (m GroundMap) checkHorizontalMirrorAt(index int) bool {
+	diff := 0
+
 	for i := 0; (index+i < len(m)) && (index-i > 0); i++ {
-		if m[index+i] != m[index-(i+1)] {
+		diff += lineDiff(m[index+i], m[index-(i+1)])
+		if (mirrorHasSmudge && diff > 1) || (!mirrorHasSmudge && m[index+i] != m[index-(i+1)]) {
 			return false
 		}
 	}
-	return index > 0
+	return index > 0 && (!mirrorHasSmudge || diff == 1)
 }
 
 func (m GroundMap) makeColumnBuffer() []byte {
@@ -35,6 +59,7 @@ func (m GroundMap) fillColumnBuffer(index int, buff []byte) {
 }
 
 func (m GroundMap) checkVerticalMirrorAt(index int) bool {
+	diff := 0
 	verticalBuffer := [][]byte{
 		m.makeColumnBuffer(),
 		m.makeColumnBuffer(),
@@ -42,11 +67,12 @@ func (m GroundMap) checkVerticalMirrorAt(index int) bool {
 	for i := 0; (index+i < len(m[0])) && (index-i > 0); i++ {
 		m.fillColumnBuffer(index-(i+1), verticalBuffer[0])
 		m.fillColumnBuffer(index+i, verticalBuffer[1])
-		if !slices.Equal(verticalBuffer[0], verticalBuffer[1]) {
+		diff += lineDiff(string(verticalBuffer[0]), string(verticalBuffer[1]))
+		if (mirrorHasSmudge && diff > 1) || (!mirrorHasSmudge && !slices.Equal(verticalBuffer[0], verticalBuffer[1])) {
 			return false
 		}
 	}
-	return index > 0
+	return index > 0 && (!mirrorHasSmudge || diff == 1)
 }
 
 func (m GroundMap) Solve() (bool, int) {
@@ -61,14 +87,14 @@ func (m GroundMap) Solve() (bool, int) {
 
 	for i := 0; i < limit; i++ {
 		if i < verticalLimit {
-			if hLineBuffer[0] == m[i] && m.checkHorizontalMirrorAt(i) {
+			if m.checkHorizontalMirrorAt(i) {
 				return true, i * 100
 			}
 			hLineBuffer[0] = m[i]
 		}
 		if i < horizontalLimit {
 			m.fillColumnBuffer(i, vLineBuffer[1])
-			if slices.Equal(vLineBuffer[0], vLineBuffer[1]) && m.checkVerticalMirrorAt(i) {
+			if m.checkVerticalMirrorAt(i) {
 				return true, i
 			}
 			vLineBuffer[0] = slices.Insert(vLineBuffer[0][:0], 0, vLineBuffer[1]...)
