@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +11,15 @@ import (
 const (
 	inputFilename = "input.txt"
 )
+
+var (
+	shouldSearchForMax bool
+)
+
+func init() {
+	flag.BoolVar(&shouldSearchForMax, "maximize", false, "Search for the maximum energized tiles")
+	flag.Parse()
+}
 
 type Direction uint8
 
@@ -158,6 +168,31 @@ func (m MirrorMap) Display() {
 	}
 }
 
+func (m MirrorMap) CountEnergized() int {
+	sum := 0
+
+	for _, line := range m {
+		for _, tile := range line {
+			if tile.energized {
+				sum++
+			}
+		}
+	}
+	return sum
+}
+
+func (m MirrorMap) Reset() int {
+	sum := 0
+
+	for lineIndex := range m {
+		for tileIndex := range m[lineIndex] {
+			m[lineIndex][tileIndex].energized = false
+			m[lineIndex][tileIndex].visitedFrom = [4]bool{false, false, false, false}
+		}
+	}
+	return sum
+}
+
 func (m MirrorMap) GetWidth() int {
 	if len(m) <= 0 {
 		return 0
@@ -169,13 +204,9 @@ func (m MirrorMap) GetHeight() int {
 	return len(m)
 }
 
-func (m MirrorMap) RunSimulation() {
+func (m MirrorMap) RunSimulation(startCursor Cursor) {
 	cursorArray := make([]Cursor, 1)
-	cursorArray[0] = Cursor{
-		x:         0,
-		y:         0,
-		direction: DIR_RIGHT,
-	}
+	cursorArray[0] = startCursor
 
 	for len(cursorArray) > 0 {
 		nCursorArray := make([]Cursor, 0, len(cursorArray))
@@ -203,6 +234,50 @@ func (m MirrorMap) RunSimulation() {
 	}
 }
 
+func (m MirrorMap) SearchMax() int {
+
+	mapWidth := m.GetWidth()
+	mapHeight := m.GetHeight()
+	perimeter := mapWidth*2 + mapHeight*2
+
+	max := 0
+	for i := 0; i < perimeter; i++ {
+		var x, y int
+		var dir Direction
+
+		if i < mapWidth*2 {
+			x = i % mapWidth
+			if i < mapWidth {
+				y = 0
+				dir = DIR_DOWN
+			} else {
+				y = mapHeight - 1
+				dir = DIR_UP
+			}
+		} else {
+			y = (i - (mapWidth * 2)) % mapHeight
+			if i-(mapWidth*2) < mapHeight {
+				dir = DIR_RIGHT
+				x = 0
+			} else {
+				dir = DIR_LEFT
+				x = mapWidth - 1
+			}
+		}
+
+		m.RunSimulation(Cursor{
+			x:         x,
+			y:         y,
+			direction: dir,
+		})
+		if energized := m.CountEnergized(); energized > max {
+			max = energized
+		}
+		m.Reset()
+	}
+	return max
+}
+
 func main() {
 	file, openError := os.ReadFile(inputFilename)
 
@@ -211,21 +286,15 @@ func main() {
 	}
 	mirrorMap := newMirrorMapFromByteArray(file[:])
 
-	mirrorMap.RunSimulation()
+	if shouldSearchForMax {
+		fmt.Printf("max result: %d\n", mirrorMap.SearchMax())
+	} else {
+		mirrorMap.RunSimulation(Cursor{
+			x:         0,
+			y:         0,
+			direction: DIR_RIGHT,
+		})
+		fmt.Printf("result: %d\n", mirrorMap.CountEnergized())
 
-	sum := 0
-	for _, line := range mirrorMap {
-		for _, tile := range line {
-			if tile.energized {
-				fmt.Printf("#")
-			} else {
-				fmt.Printf("%c", tile.tile)
-			}
-			if tile.energized {
-				sum++
-			}
-		}
-		fmt.Printf("\n")
 	}
-	fmt.Printf("\nresult: %d\n", sum)
 }
